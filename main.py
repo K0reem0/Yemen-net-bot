@@ -1,8 +1,6 @@
 import os
 os.system("pip install apscheduler")
 import os
-os.system("pip install python-telegram-bot requests beautifulsoup4")
-import os
 import json
 import requests
 from bs4 import BeautifulSoup
