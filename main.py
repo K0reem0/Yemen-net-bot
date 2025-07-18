@@ -1,101 +1,111 @@
-import json
 import os
-import logging
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-from apscheduler.schedulers.background import BackgroundScheduler
+import json
 import requests
+from bs4 import BeautifulSoup
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+)
 
-# إعدادات
-TOKEN = os.getenv("BOT_TOKEN")
-PORT = int(os.environ.get('PORT', 8443))
-USER_DATA_FILE = "data.json"
+BOT_TOKEN = "7672313087:AAGIT41DTQXgt_ATD3KbFEJlgcYCrK8g5Lo"
+DATA_FILE = "data.json"
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
-scheduler = BackgroundScheduler()
-scheduler.start()
+def save_data(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def load_user_data():
-    if not os.path.exists(USER_DATA_FILE):
-        return {}
-    with open(USER_DATA_FILE, "r") as f:
-        return json.load(f)
-
-def save_user_data(user_id, phone, notify=False):
-    data = load_user_data()
-    data[str(user_id)] = {"phone": phone, "notify": notify}
-    with open(USER_DATA_FILE, "w") as f:
-        json.dump(data, f)
-
-def get_balance(phone):
+def query_balance(phone_number):
+    url = "https://adsl-yemen.com/"
+    data = {"mobile": phone_number, "action": "query"}
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        url = f"http://portal.yemen.net.ye/?service=balance&phone={phone}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            return f"📶 رصيد الباقة: {response.text.strip()}"
-        else:
-            return "❌ لم يتم التمكن من جلب الرصيد حالياً."
-    except Exception as e:
-        return f"⚠️ خطأ أثناء جلب الرصيد: {e}"
-
-def check_balance_job(context):
-    data = load_user_data()
-    for user_id, info in data.items():
-        if info.get("notify"):
-            phone = info.get("phone")
-            balance = get_balance(phone)
-            context.bot.send_message(chat_id=int(user_id), text=f"{balance}
-
-مع تحيات المهندس نجيب الخالدي
-📱 772882439")
-
-def send_balance_now(context, user_id):
-    data = load_user_data()
-    phone = data.get(str(user_id), {}).get("phone")
-    if phone:
-        balance = get_balance(phone)
-        context.bot.send_message(chat_id=user_id, text=f"{balance}
-
-مع تحيات المهندس نجيب الخالدي
-📱 772882439")
+        res = requests.post(url, data=data, headers=headers, timeout=15)
+        soup = BeautifulSoup(res.text, "html.parser")
+        boxes = soup.find_all("div", class_="result-box")
+        if not boxes:
+            return None
+        info = {b.find("div", class_="result-title").text.strip(): b.find("div", class_="result-value").text.strip()
+                for b in boxes}
+        return info
+    except:
+        return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+    data = load_data()
+    phones = data.get(user_id, {}).get("phones", [])
+    keyboard = [[p] for p in phones] if phones else [["استعلام رصيد"]]
     await update.message.reply_text(
-        "مرحباً! أرسل رقم الهاتف الثابت (يمن نت) للاستعلام عن رصيدك.
-"
-        "مثال: 01xxxxxx
-"
+        "مرحبًا بك! 👋\nأرسل رقم الهاتف الأرضي (مثال: 01XXXXXX) أو اختر من الأرقام المحفوظة:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
     text = update.message.text.strip()
+    data = load_data()
+    phones = data.get(user_id, {}).get("phones", [])
 
-    if text.startswith("01") and len(text) >= 7:
-        reply_keyboard = [["نعم", "لا"]]
-        context.user_data["pending_phone"] = text
+    if text == "استعلام رصيد":
+        await update.message.reply_text("📝 أرسل رقم الهاتف الأرضي (مثال: 01XXXXXXX).")
+        return
+
+    if text in ("نعم", "لا"):
+        last_number = context.user_data.get("last_number")
+        if text == "نعم" and last_number:
+            if last_number not in phones:
+                phones.append(last_number)
+            data[user_id] = {"phones": phones}
+            save_data(data)
+            await update.message.reply_text("✅ تم حفظ الرقم.")
+
+        keyboard = [[p] for p in phones] if phones else [["استعلام رصيد"]]
         await update.message.reply_text(
-            f"هل تريد حفظ الرقم {text}؟",
-            reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+            "اختر رقمًا محفوظًا أو أرسل رقمًا جديدًا:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
-    elif text == "نعم" and "pending_phone" in context.user_data:
-        phone = context.user_data.pop("pending_phone")
-        save_user_data(user_id, phone, notify=True)
-        scheduler.add_job(check_balance_job, 'interval', minutes=10, args=[context])
-        send_balance_now(context, user_id)
-        await update.message.reply_text("✅ تم تفعيل الإشعارات كل 10 دقائق.")
-    elif text == "لا":
-        await update.message.reply_text("❌ تم إلغاء العملية.")
-    else:
-        await update.message.reply_text("⚠️ الرجاء إرسال رقم يبدأ بـ 01")
+        return
 
-def main():
-    application = ApplicationBuilder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.run_polling()
+    if not text.startswith("0") or len(text) != 8 or not text.isdigit():
+        await update.message.reply_text("⚠️ أدخل رقمًا صحيحًا (مثال: 01694455).")
+        return
+
+    await update.message.reply_text("🔍 جاري الاستعلام عن الرصيد ...")
+    info = query_balance(text)
+    if not info:
+        await update.message.reply_text("❌ لم أستطع جلب البيانات، أعد المحاولة لاحقًا.")
+        return
+
+    msg = (
+        f"📡 *الرصيد الحالي:* {info.get('الرصيد الحالي', '?')}\n"
+        f"💳 *قيمة الباقة:* {info.get('قيمة الباقة', '?')} ريال\n"
+        f"📅 *تاريخ الانتهاء:* {info.get('تاريخ الانتهاء', '?')}\n\n"
+        f"مع تحيات المهندس نجيب أحمد الخالدي 📞 772882439"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+    if text not in phones:
+        context.user_data["last_number"] = text
+        await update.message.reply_text(
+            "هل تريد حفظ الرقم؟",
+            reply_markup=ReplyKeyboardMarkup([["نعم", "لا"]], resize_keyboard=True)
+        )
+    else:
+        keyboard = [[p] for p in phones] if phones else [["استعلام رصيد"]]
+        await update.message.reply_text(
+            "اختر رقمًا محفوظًا أو أرسل رقمًا جديدًا:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        )
 
 if __name__ == "__main__":
-    main()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    print("🤖 Bot is running...")
+    app.run_polling()
