@@ -1,6 +1,5 @@
 import os
 os.system("pip install apscheduler")
-import os
 import json
 import requests
 from bs4 import BeautifulSoup
@@ -42,7 +41,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
     data = load_data()
     phones = data.get(user_id, {}).get("phones", [])
-    keyboard = [[p] for p in phones] if phones else [["استعلام رصيد"]]
+    keyboard = [[p] for p in phones]
+    if phones:
+        keyboard.append(["استعلام الكل"])
+    else:
+        keyboard.append(["استعلام رصيد"])
     await update.message.reply_text(
         "مرحبًا بك! 👋\nأرسل رقم الهاتف الأرضي (مثال: 01XXXXXX) أو اختر من الأرقام المحفوظة:",
         reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -53,6 +56,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     data = load_data()
     phones = data.get(user_id, {}).get("phones", [])
+
+    # ✔️ استعلام الكل
+    if text == "استعلام الكل":
+        if not phones:
+            await update.message.reply_text("⚠️ لا توجد أرقام محفوظة لديك.")
+            return
+
+        await update.message.reply_text("🔄 جاري الاستعلام عن جميع الأرقام المحفوظة ...")
+        for number in phones:
+            await update.message.reply_text(f"📞 الرقم: {number}\n🔍 جاري الاستعلام...")
+            info = query_balance(number)
+            if not info:
+                await update.message.reply_text(f"❌ فشل الاستعلام عن {number}.")
+                continue
+
+            msg = (
+                f"📞 *الرقم:* {number}\n"
+                f"📡 *الرصيد الحالي:* {info.get('الرصيد الحالي', '?')}\n"
+                f"💳 *قيمة الباقة:* {info.get('قيمة الباقة', '?')} ريال\n"
+                f"📅 *تاريخ الانتهاء:* {info.get('تاريخ الانتهاء', '?')}\n\n"
+                f"مع تحيات المهندس نجيب أحمد الخالدي 📞 772882439"
+            )
+            await update.message.reply_text(msg, parse_mode="Markdown")
+        return
 
     if text == "استعلام رصيد":
         await update.message.reply_text("📝 أرسل رقم الهاتف الأرضي (مثال: 01XXXXXXX).")
@@ -67,7 +94,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_data(data)
             await update.message.reply_text("✅ تم حفظ الرقم.")
 
-        keyboard = [[p] for p in phones] if phones else [["استعلام رصيد"]]
+        keyboard = [[p] for p in phones]
+        if phones:
+            keyboard.append(["استعلام الكل"])
+        else:
+            keyboard.append(["استعلام رصيد"])
         await update.message.reply_text(
             "اختر رقمًا محفوظًا أو أرسل رقمًا جديدًا:",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -99,7 +130,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardMarkup([["نعم", "لا"]], resize_keyboard=True)
         )
     else:
-        keyboard = [[p] for p in phones] if phones else [["استعلام رصيد"]]
+        keyboard = [[p] for p in phones]
+        if phones:
+            keyboard.append(["استعلام الكل"])
+        else:
+            keyboard.append(["استعلام رصيد"])
         await update.message.reply_text(
             "اختر رقمًا محفوظًا أو أرسل رقمًا جديدًا:",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
