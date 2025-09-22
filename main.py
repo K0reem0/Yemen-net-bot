@@ -8,7 +8,7 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 )
 
-BOT_TOKEN = "7672313087:AAGIT41DTQXgt_ATD3KbFEJlgcYCrK8g5Lo"
+BOT_TOKEN = "8463429711:AAFbgxTZ9Nr1rhMlCtvj6igFOdJvt-uuoZ4"
 DATA_FILE = "data.json"
 
 def load_data():
