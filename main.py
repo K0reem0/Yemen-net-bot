@@ -33,7 +33,7 @@ def query_balance(phone_number: str):
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         res = requests.post(url, data=data, headers=headers, timeout=15)
-        res.raise_for_status()  # لو فيه خطأ HTTP
+        res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
 
         boxes = soup.find_all("div", class_="result-box")
